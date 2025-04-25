@@ -3,14 +3,12 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Nov 10, 2022 at 11:19 AM
 -- Server version: 10.4.24-MariaDB
 -- PHP Version: 8.1.6
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
 SET time_zone = "+00:00";
-
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -20,12 +18,12 @@ SET time_zone = "+00:00";
 --
 -- Database: `bluebirdhotel`
 -- User: `bluebird_user`
--- Password:   `password`
+-- Password: `password`
 --
 DROP DATABASE IF EXISTS bluebirdhotel;
 CREATE DATABASE IF NOT EXISTS bluebirdhotel;
 
-DROP USER IF EXISTS'bluebird_user'@'%';
+DROP USER IF EXISTS 'bluebird_user'@'%';
 CREATE USER IF NOT EXISTS 'bluebird_user'@'%' IDENTIFIED BY 'password';
 GRANT ALL PRIVILEGES ON bluebirdhotel.* TO 'bluebird_user'@'%';
 USE bluebirdhotel;
@@ -69,7 +67,8 @@ CREATE TABLE `payment` (
   `bedtotal` double(8,2) NOT NULL,
   `meal` varchar(30) NOT NULL,
   `mealtotal` double(8,2) NOT NULL,
-  `finaltotal` double(8,2) NOT NULL
+  `finaltotal` double(8,2) NOT NULL,
+  CONSTRAINT `chk_payment_dates` CHECK (`cout` > `cin`) -- only valid check
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
@@ -133,7 +132,8 @@ CREATE TABLE `roombook` (
   `cin` date NOT NULL,
   `cout` date NOT NULL,
   `nodays` int(50) NOT NULL,
-  `stat` varchar(30) NOT NULL
+  `stat` varchar(30) NOT NULL,
+  CONSTRAINT `chk_roombook_dates` CHECK (`cout` > `cin`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --

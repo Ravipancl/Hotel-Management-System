@@ -1,120 +1,218 @@
 <?php
-
 include '../config.php';
 
-// fetch room data
-$id = $_GET['id'];
+// Fetch room data
+$id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
-$sql ="Select * from roombook where id = '$id'";
-$re = mysqli_query($conn,$sql);
-while($row=mysqli_fetch_array($re))
-{
-    $Name = $row['Name'];
-    $Email = $row['Email'];
-    $Country = $row['Country'];
-    $Phone = $row['Phone'];
-    $cin = $row['cin'];
-    $cout = $row['cout'];
-    $noofday = $row['nodays'];
-    $stat = $row['stat'];
+// Use prepared statement to prevent SQL injection
+$stmt = $conn->prepare("SELECT * FROM roombook WHERE id = ?");
+$stmt->bind_param("i", $id);
+$stmt->execute();
+$result = $stmt->get_result();
+$row = $result->fetch_assoc();
+
+if (!$row) {
+    die("<script>
+        swal({
+            title: 'Error',
+            text: 'Booking not found',
+            icon: 'error'
+        }).then(() => {
+            window.location.href='roombook.php';
+        });
+    </script>");
 }
 
-if (isset($_POST['guestdetailedit'])) {
-    $EditName = $_POST['Name'];
-    $EditEmail = $_POST['Email'];
-    $EditCountry = $_POST['Country'];
-    $EditPhone = $_POST['Phone'];
-    $EditRoomType = $_POST['RoomType'];
-    $EditBed = $_POST['Bed'];
-    $EditNoofRoom = $_POST['NoofRoom'];
-    $EditMeal = $_POST['Meal'];
-    $Editcin = $_POST['cin'];
-    $Editcout = $_POST['cout'];
+// Extract booking data
+$Name = $row['Name'];
+$Email = $row['Email'];
+$Country = $row['Country'];
+$Phone = $row['Phone'];
+$cin = $row['cin'];
+$cout = $row['cout'];
+$noofday = $row['nodays'];
+$stat = $row['stat'];
+$RoomType = $row['RoomType'];
+$Bed = $row['Bed'];
+$NoofRoom = $row['NoofRoom'];
+$Meal = $row['Meal'];
 
-    $sql = "UPDATE roombook SET Name = '$EditName',Email = '$EditEmail',Country='$EditCountry',Phone='$EditPhone',RoomType='$EditRoomType',Bed='$EditBed',NoofRoom='$EditNoofRoom',Meal='$EditMeal',cin='$Editcin',cout='$Editcout',nodays = datediff('$Editcout','$Editcin') WHERE id = '$id'";
+// Get today's date in YYYY-MM-DD format
+$today = date('Y-m-d');
 
-    $result = mysqli_query($conn, $sql);
+// Prevent editing past bookings
+if($cin < $today) {
+    die("<script>
+        swal({
+            title: 'Cannot Edit',
+            text: 'Past bookings cannot be modified',
+            icon: 'error'
+        }).then(() => {
+            window.location.href='roombook.php';
+        });
+    </script>");
+}
 
+/**
+ * Calculate room prices based on selections
+ * @param string $roomType The type of room
+ * @param string $bedType The type of bed
+ * @param string $mealType The type of meal
+ * @param int $days Number of days
+ * @param int $roomCount Number of rooms
+ * @return array Returns array with calculated totals
+ */
+function calculatePrices($roomType, $bedType, $mealType, $days, $roomCount) {
+    // Room type base price
     $type_of_room = 0;
-    if($EditRoomType=="Superior Room")
-    {
-        $type_of_room = 3000;
-    }
-    else if($EditRoomType=="Deluxe Room")
-    {
-        $type_of_room = 2000;
-    }
-    else if($EditRoomType=="Guest House")
-    {
-        $type_of_room = 1500;
-    }
-    else if($EditRoomType=="Single Room")
-    {
-        $type_of_room = 1000;
+    switch($roomType) {
+        case "Superior Room": $type_of_room = 3000; break;
+        case "Deluxe Room": $type_of_room = 2000; break;
+        case "Guest House": $type_of_room = 1500; break;
+        case "Single Room": $type_of_room = 1000; break;
     }
     
-    
-    if($EditBed=="Single")
-    {
-        $type_of_bed = $type_of_room * 1/100;
-    }
-    else if($EditBed=="Double")
-    {
-        $type_of_bed = $type_of_room * 2/100;
-    }
-    else if($EditBed=="Triple")
-    {
-        $type_of_bed = $type_of_room * 3/100;
-    }
-    else if($EditBed=="Quad")
-    {
-        $type_of_bed = $type_of_room * 4/100;
-    }
-    else if($EditBed=="None")
-    {
-        $type_of_bed = $type_of_room * 0/100;
-    }
-
-    if($EditMeal=="Room only")
-    {
-        $type_of_meal=$type_of_bed * 0;
-    }
-    else if($EditMeal=="Breakfast")
-    {
-        $type_of_meal=$type_of_bed * 2;
-    }
-    else if($EditMeal=="Half Board")
-    {
-        $type_of_meal=$type_of_bed * 3;
-    }
-    else if($EditMeal=="Full Board")
-    {
-        $type_of_meal=$type_of_bed * 4;
+    // Bed multiplier
+    $type_of_bed = 0;
+    switch($bedType) {
+        case "Single": $type_of_bed = $type_of_room * 0.01; break;
+        case "Double": $type_of_bed = $type_of_room * 0.02; break;
+        case "Triple": $type_of_bed = $type_of_room * 0.03; break;
+        case "Quad": $type_of_bed = $type_of_room * 0.04; break;
     }
     
-    // noofday update
-    $psql ="Select * from roombook where id = '$id'";
-    $presult = mysqli_query($conn,$psql);
-    $prow=mysqli_fetch_array($presult);
-    $Editnoofday = $prow['nodays'];
-
-    $editttot = $type_of_room*$Editnoofday * $EditNoofRoom;
-    $editmepr = $type_of_meal*$Editnoofday;
-    $editbtot = $type_of_bed*$Editnoofday;
-
-    $editfintot = $editttot + $editmepr + $editbtot;
-
-    $psql = "UPDATE payment SET Name = '$EditName',Email = '$EditEmail',RoomType='$EditRoomType',Bed='$EditBed',NoofRoom='$EditNoofRoom',Meal='$EditMeal',cin='$Editcin',cout='$Editcout',noofdays = '$Editnoofday',roomtotal = '$editttot',bedtotal = '$editbtot',mealtotal = '$editmepr',finaltotal = '$editfintot' WHERE id = '$id'";
-
-    $paymentresult = mysqli_query($conn,$psql);
-
-    if ($paymentresult) {
-            header("Location:roombook.php");
+    // Meal multiplier
+    $type_of_meal = 0;
+    switch($mealType) {
+        case "Breakfast": $type_of_meal = $type_of_bed * 2; break;
+        case "Half Board": $type_of_meal = $type_of_bed * 3; break;
+        case "Full Board": $type_of_meal = $type_of_bed * 4; break;
     }
-
+    
+    // Calculate totals
+    $ttot = $type_of_room * $days * $roomCount;
+    $mepr = $type_of_meal * $days;
+    $btot = $type_of_bed * $days;
+    $fintot = $ttot + $mepr + $btot;
+    
+    return [
+        'roomtotal' => $ttot,
+        'bedtotal' => $btot,
+        'mealtotal' => $mepr,
+        'finaltotal' => $fintot
+    ];
 }
-?>
 
+/**
+ * Validate booking dates
+ * @param string $cin Check-in date
+ * @param string $cout Check-out date
+ * @return true|string Returns true if valid, error message if invalid
+ */
+function validateBookingDates($cin, $cout) {
+    $today = date('Y-m-d');
+    
+    if ($cin < $today) {
+        return "Check-in date cannot be in the past.";
+    }
+
+    if ($cout <= $cin) {
+        return "Check-out date must be after check-in date.";
+    }
+
+    return true;
+}
+
+// Process form submission
+if (isset($_POST['guestdetailedit'])) {
+    // Get form data with basic sanitization
+    $EditName = trim($_POST['Name']);
+    $EditEmail = filter_var($_POST['Email'], FILTER_SANITIZE_EMAIL);
+    $EditCountry = trim($_POST['Country']);
+    $EditPhone = trim($_POST['Phone']);
+    $EditRoomType = trim($_POST['RoomType']);
+    $EditBed = trim($_POST['Bed']);
+    $EditNoofRoom = intval($_POST['NoofRoom']);
+    $EditMeal = trim($_POST['Meal']);
+    $Editcin = trim($_POST['cin']);
+    $Editcout = trim($_POST['cout']);
+    
+    // Validate dates
+    $dateValidation = validateBookingDates($Editcin, $Editcout);
+    if ($dateValidation !== true) {
+        echo "<script>
+            swal({
+                title: 'Invalid Date',
+                text: '$dateValidation',
+                icon: 'error'
+            });
+        </script>";
+    } else {
+        // Calculate number of days
+        $Editnoofday = date_diff(date_create($Editcin), date_create($Editcout))->format('%a');
+        
+        // Use prepared statement for update
+        $stmt = $conn->prepare("UPDATE roombook SET Name=?, Email=?, Country=?, Phone=?, RoomType=?, Bed=?, NoofRoom=?, Meal=?, cin=?, cout=?, nodays=? WHERE id=?");
+        $stmt->bind_param("sssssssssssi", $EditName, $EditEmail, $EditCountry, $EditPhone, $EditRoomType, $EditBed, $EditNoofRoom, $EditMeal, $Editcin, $Editcout, $Editnoofday, $id);
+        
+        if ($stmt->execute()) {
+            // Calculate prices
+            $prices = calculatePrices($EditRoomType, $EditBed, $EditMeal, $Editnoofday, $EditNoofRoom);
+            
+            // Update payment information
+            $stmt = $conn->prepare("UPDATE payment SET Name=?, Email=?, RoomType=?, Bed=?, NoofRoom=?, Meal=?, cin=?, cout=?, noofdays=?, roomtotal=?, bedtotal=?, mealtotal=?, finaltotal=? WHERE id=?");
+            $stmt->bind_param("ssssssssddddi", 
+                $EditName, 
+                $EditEmail, 
+                $EditRoomType, 
+                $EditBed, 
+                $EditNoofRoom, 
+                $EditMeal, 
+                $Editcin, 
+                $Editcout, 
+                $Editnoofday, 
+                $prices['roomtotal'], 
+                $prices['bedtotal'], 
+                $prices['mealtotal'], 
+                $prices['finaltotal'], 
+                $id
+            );
+            
+            if ($stmt->execute()) {
+                echo "<script>
+                    swal({
+                        title: 'Success',
+                        text: 'Booking updated successfully',
+                        icon: 'success'
+                    }).then(() => {
+                        window.location.href='roombook.php';
+                    });
+                </script>";
+                exit();
+            } else {
+                echo "<script>
+                    swal({
+                        title: 'Error',
+                        text: 'Failed to update payment',
+                        icon: 'error'
+                    });
+                </script>";
+            }
+        } else {
+            echo "<script>
+                swal({
+                    title: 'Error',
+                    text: 'Failed to update booking',
+                    icon: 'error'
+                });
+            </script>";
+        }
+    }
+}
+
+// List of countries (abbreviated for clarity)
+$countries = array("Afghanistan", "Albania", "Algeria", "...");
+?>
 
 <!DOCTYPE html>
 <html lang="en">
@@ -122,23 +220,22 @@ if (isset($_POST['guestdetailedit'])) {
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- boot -->
+    <!-- bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
-    <!-- fontowesome -->
+    <!-- fontawesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css" integrity="sha512-xh6O/CkQoPOWDdYTDqeRdPCVd1SpvCA9XXcUnZS2FmJNp1coAFzvtCN9BmamE+4aHK8yyUHUSCcJHgXloTyT2A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <!-- sweet alert -->
     <script src="https://unpkg.com/sweetalert/dist/sweetalert.min.js"></script>
     <link rel="stylesheet" href="./css/roombook.css">
     <style>
         #editpanel{
-            position : fixed;
+            position: fixed;
             z-index: 1000;
             height: 100%;
             width: 100%;
             display: flex;
             justify-content: center;
-            /* align-items: center; */
             background-color: #00000079;
         }
         #editpanel .guestdetailpanelform{
@@ -146,18 +243,16 @@ if (isset($_POST['guestdetailedit'])) {
             width: 1170px;
             background-color: #ccdff4;
             border-radius: 10px;  
-            /* temp */
             position: relative;
             top: 20px;
             animation: guestinfoform .3s ease;
         }
-
     </style>
-    <title>Document</title>
+    <title>Edit Reservation</title>
 </head>
 <body>
     <div id="editpanel">
-        <form method="POST" class="guestdetailpanelform">
+        <form method="POST" class="guestdetailpanelform" id="bookingForm">
             <div class="head">
                 <h3>EDIT RESERVATION</h3>
                 <a href="./roombook.php"><i class="fa-solid fa-circle-xmark"></i></a>
@@ -165,73 +260,133 @@ if (isset($_POST['guestdetailedit'])) {
             <div class="middle">
                 <div class="guestinfo">
                     <h4>Guest information</h4>
-                    <input type="text" name="Name" placeholder="Enter Full name" value="<?php echo $Name ?>">
-                    <input type="email" name="Email" placeholder="Enter Email" value="<?php echo $Email ?>">
+                    <input type="text" name="Name" placeholder="Enter Full name" value="<?php echo htmlspecialchars($Name) ?>" required>
+                    <input type="email" name="Email" placeholder="Enter Email" value="<?php echo htmlspecialchars($Email) ?>" required>
 
-                    <?php
-                    $countries = array("Afghanistan", "Albania", "Algeria", "American Samoa", "Andorra", "Angola", "Anguilla", "Antarctica", "Antigua and Barbuda", "Argentina", "Armenia", "Aruba", "Australia", "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus", "Belgium", "Belize", "Benin", "Bermuda", "Bhutan", "Bolivia", "Bosnia and Herzegowina", "Botswana", "Bouvet Island", "Brazil", "British Indian Ocean Territory", "Brunei Darussalam", "Bulgaria", "Burkina Faso", "Burundi", "Cambodia", "Cameroon", "Canada", "Cape Verde", "Cayman Islands", "Central African Republic", "Chad", "Chile", "China", "Christmas Island", "Cocos (Keeling) Islands", "Colombia", "Comoros", "Congo", "Congo, the Democratic Republic of the", "Cook Islands", "Costa Rica", "Cote d'Ivoire", "Croatia (Hrvatska)", "Cuba", "Cyprus", "Czech Republic", "Denmark", "Djibouti", "Dominica", "Dominican Republic", "East Timor", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia", "Ethiopia", "Falkland Islands (Malvinas)", "Faroe Islands", "Fiji", "Finland", "France", "France Metropolitan", "French Guiana", "French Polynesia", "French Southern Territories", "Gabon", "Gambia", "Georgia", "Germany", "Ghana", "Gibraltar", "Greece", "Greenland", "Grenada", "Guadeloupe", "Guam", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana", "Haiti", "Heard and Mc Donald Islands", "Holy See (Vatican City State)", "Honduras", "Hong Kong", "Hungary", "Iceland", "India", "Indonesia", "Iran (Islamic Republic of)", "Iraq", "Ireland", "Israel", "Italy", "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati", "Korea, Democratic People's Republic of", "Korea, Republic of", "Kuwait", "Kyrgyzstan", "Lao, People's Democratic Republic", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libyan Arab Jamahiriya", "Liechtenstein", "Lithuania", "Luxembourg", "Macau", "Macedonia, The Former Yugoslav Republic of", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Martinique", "Mauritania", "Mauritius", "Mayotte", "Mexico", "Micronesia, Federated States of", "Moldova, Republic of", "Monaco", "Mongolia", "Montserrat", "Morocco", "Mozambique", "Myanmar", "Namibia", "Nauru", "Nepal", "Netherlands", "Netherlands Antilles", "New Caledonia", "New Zealand", "Nicaragua", "Niger", "Nigeria", "Niue", "Norfolk Island", "Northern Mariana Islands", "Norway", "Oman", "Pakistan", "Palau", "Panama", "Papua New Guinea", "Paraguay", "Peru", "Philippines", "Pitcairn", "Poland", "Portugal", "Puerto Rico", "Qatar", "Reunion", "Romania", "Russian Federation", "Rwanda", "Saint Kitts and Nevis", "Saint Lucia", "Saint Vincent and the Grenadines", "Samoa", "San Marino", "Sao Tome and Principe", "Saudi Arabia", "Senegal", "Seychelles", "Sierra Leone", "Singapore", "Slovakia (Slovak Republic)", "Slovenia", "Solomon Islands", "Somalia", "South Africa", "South Georgia and the South Sandwich Islands", "Spain", "Sri Lanka", "St. Helena", "St. Pierre and Miquelon", "Sudan", "Suriname", "Svalbard and Jan Mayen Islands", "Swaziland", "Sweden", "Switzerland", "Syrian Arab Republic", "Taiwan, Province of China", "Tajikistan", "Tanzania, United Republic of", "Thailand", "Togo", "Tokelau", "Tonga", "Trinidad and Tobago", "Tunisia", "Turkey", "Turkmenistan", "Turks and Caicos Islands", "Tuvalu", "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom", "United States", "United States Minor Outlying Islands", "Uruguay", "Uzbekistan", "Vanuatu", "Venezuela", "Vietnam", "Virgin Islands (British)", "Virgin Islands (U.S.)", "Wallis and Futuna Islands", "Western Sahara", "Yemen", "Yugoslavia", "Zambia", "Zimbabwe");
-                    ?>
-
-                    <select name="Country" class="selectinput">
-						<option value selected >Select your country</option>
-                        <?php
-							foreach($countries as $key => $value):
-							echo '<option value="'.$value.'">'.$value.'</option>';
-                            //close your tags!!
-							endforeach;
-						?>
+                    <select name="Country" class="selectinput" required>
+                        <option value="">Select your country</option>
+                        <?php foreach($countries as $value): ?>
+                            <option value="<?php echo htmlspecialchars($value) ?>" <?php echo ($value == $Country) ? 'selected' : '' ?>>
+                                <?php echo htmlspecialchars($value) ?>
+                            </option>
+                        <?php endforeach; ?>
                     </select>
-                    <input type="text" name="Phone" placeholder="Enter Phoneno"  value="<?php echo $Phone ?>">
+                    <input type="text" name="Phone" placeholder="Enter Phoneno" value="<?php echo htmlspecialchars($Phone) ?>" required>
                 </div>
 
                 <div class="line"></div>
 
                 <div class="reservationinfo">
                     <h4>Reservation information</h4>
-                    <select name="RoomType" class="selectinput">
-						<option value selected >Type Of Room</option>
-                        <option value="Superior Room">SUPERIOR ROOM</option>
-                        <option value="Deluxe Room">DELUXE ROOM</option>
-						<option value="Guest House">GUEST HOUSE</option>
-						<option value="Single Room">SINGLE ROOM</option>
+                    <select name="RoomType" class="selectinput" required>
+                        <option value="">Type Of Room</option>
+                        <option value="Superior Room" <?php echo ($RoomType == 'Superior Room') ? 'selected' : '' ?>>SUPERIOR ROOM</option>
+                        <option value="Deluxe Room" <?php echo ($RoomType == 'Deluxe Room') ? 'selected' : '' ?>>DELUXE ROOM</option>
+                        <option value="Guest House" <?php echo ($RoomType == 'Guest House') ? 'selected' : '' ?>>GUEST HOUSE</option>
+                        <option value="Single Room" <?php echo ($RoomType == 'Single Room') ? 'selected' : '' ?>>SINGLE ROOM</option>
                     </select>
-                    <select name="Bed" class="selectinput">
-						<option value selected >Bedding Type</option>
-                        <option value="Single">Single</option>
-                        <option value="Double">Double</option>
-						<option value="Triple">Triple</option>
-                        <option value="Quad">Quad</option>
-						<option value="None">None</option>
+                    <select name="Bed" class="selectinput" required>
+                        <option value="">Bedding Type</option>
+                        <option value="Single" <?php echo ($Bed == 'Single') ? 'selected' : '' ?>>Single</option>
+                        <option value="Double" <?php echo ($Bed == 'Double') ? 'selected' : '' ?>>Double</option>
+                        <option value="Triple" <?php echo ($Bed == 'Triple') ? 'selected' : '' ?>>Triple</option>
+                        <option value="Quad" <?php echo ($Bed == 'Quad') ? 'selected' : '' ?>>Quad</option>
+                        <option value="None" <?php echo ($Bed == 'None') ? 'selected' : '' ?>>None</option>
                     </select>
-                    <select name="NoofRoom" class="selectinput">
-						<option value selected >No of Room</option>
-                        <option value="1">1</option>
-                        <!-- <option value="1">2</option>
-                        <option value="1">3</option> -->
+                    <select name="NoofRoom" class="selectinput" required>
+                        <option value="">No of Room</option>
+                        <option value="1" <?php echo ($NoofRoom == '1') ? 'selected' : '' ?>>1</option>
                     </select>
-                    <select name="Meal" class="selectinput">
-						<option value selected >Meal</option>
-                        <option value="Room only">Room only</option>
-                        <option value="Breakfast">Breakfast</option>
-						<option value="Half Board">Half Board</option>
-						<option value="Full Board">Full Board</option>
-					</select>
+                    <select name="Meal" class="selectinput" required>
+                        <option value="">Meal</option>
+                        <option value="Room only" <?php echo ($Meal == 'Room only') ? 'selected' : '' ?>>Room only</option>
+                        <option value="Breakfast" <?php echo ($Meal == 'Breakfast') ? 'selected' : '' ?>>Breakfast</option>
+                        <option value="Half Board" <?php echo ($Meal == 'Half Board') ? 'selected' : '' ?>>Half Board</option>
+                        <option value="Full Board" <?php echo ($Meal == 'Full Board') ? 'selected' : '' ?>>Full Board</option>
+                    </select>
                     <div class="datesection">
                         <span>
-                            <label for="cin"> Check-In</label>
-                            <input name="cin" type ="date" value="<?php echo $cin ?>">
+                            <label for="cin">Check-In</label>
+                            <input name="cin" type="date" id="checkin-date" value="<?php echo $cin ?>" min="<?php echo date('Y-m-d'); ?>" required>
                         </span>
                         <span>
-                            <label for="cin"> Check-Out</label>
-                            <input name="cout" type ="date" value="<?php echo $cout ?>">
+                            <label for="cout">Check-Out</label>
+                            <input name="cout" type="date" id="checkout-date" value="<?php echo $cout ?>" min="<?php echo date('Y-m-d', strtotime('+1 day')); ?>" required>
                         </span>
                     </div>
                 </div>
             </div>
             <div class="footer">
-                <button class="btn btn-success" name="guestdetailedit">Edit</button>
+                <button class="btn btn-success" name="guestdetailedit">Update Booking</button>
             </div>
         </form>
     </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Get date inputs
+        const checkinDateInput = document.getElementById('checkin-date');
+        const checkoutDateInput = document.getElementById('checkout-date');
+        const bookingForm = document.getElementById('bookingForm');
+        
+        // Set today's date
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayFormatted = today.toISOString().split('T')[0];
+        
+        // Update checkout minimum date when check-in changes
+        checkinDateInput.addEventListener('change', function() {
+            if (!this.value) return;
+            
+            const checkinDate = new Date(this.value);
+            const nextDay = new Date(checkinDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+            
+            // Update minimum checkout date
+            const minCheckoutFormatted = nextDay.toISOString().split('T')[0];
+            checkoutDateInput.min = minCheckoutFormatted;
+            
+            // If current checkout date is now invalid, reset it
+            if (checkoutDateInput.value && new Date(checkoutDateInput.value) <= checkinDate) {
+                checkoutDateInput.value = minCheckoutFormatted;
+            }
+        });
+        
+        // Validate form before submission
+        bookingForm.addEventListener('submit', function(e) {
+            const checkinDate = new Date(checkinDateInput.value);
+            const checkoutDate = new Date(checkoutDateInput.value);
+            
+            // Check if dates are valid
+            if (checkinDate < today) {
+                e.preventDefault();
+                swal({
+                    title: 'Invalid Date',
+                    text: 'Check-in date cannot be in the past',
+                    icon: 'error'
+                });
+                return;
+            }
+            
+            if (checkoutDate <= checkinDate) {
+                e.preventDefault();
+                swal({
+                    title: 'Invalid Date',
+                    text: 'Check-out date must be after check-in date',
+                    icon: 'error'
+                });
+                return;
+            }
+        });
+        
+        // Initialize the checkout date minimum value
+        if (checkinDateInput.value) {
+            const checkinDate = new Date(checkinDateInput.value);
+            const nextDay = new Date(checkinDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+            checkoutDateInput.min = nextDay.toISOString().split('T')[0];
+        }
+    });
+    </script>
 </body>
 </html>

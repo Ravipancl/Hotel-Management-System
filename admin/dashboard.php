@@ -42,7 +42,7 @@
 					$tot = 0;
 					while($row = mysqli_fetch_array($result))
 					{
-              $chart_data .= "{ date:'".$row["cout"]."', profit:".$row["finaltotal"]*10/100 ."}, ";
+              $chart_data .= "{ date:'".date("Y-m-d", strtotime($row["cout"]))."', profit:".($row["finaltotal"] * 0.10)."}, ";
               $tot = $tot + $row["finaltotal"]*10/100;
 					}
 

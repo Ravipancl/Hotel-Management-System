@@ -110,10 +110,10 @@ if($usermail == true){
                     <h4>Reservation information</h4>
                     <select name="RoomType" class="selectinput">
 						<option value selected >Type Of Room</option>
-                        <option value="Superior Room">SUPERIOR ROOM</option>
-                        <option value="Deluxe Room">DELUXE ROOM</option>
-						<option value="Guest House">GUEST HOUSE</option>
-						<option value="Single Room">SINGLE ROOM</option>
+                        <option value="Superior Room">SUPERIOR ROOM (₹3000)</option>
+                        <option value="Deluxe Room">DELUXE ROOM (₹2000)</option>
+						<option value="Guest House">GUEST HOUSE (₹1500)</option>
+						<option value="Single Room">SINGLE ROOM (₹1000)</option>
                     </select>
                     <select name="Bed" class="selectinput">
 						<option value selected >Bedding Type</option>
@@ -139,11 +139,11 @@ if($usermail == true){
                     <div class="datesection">
                         <span>
                             <label for="cin"> Check-In</label>
-                            <input name="cin" type ="date">
+                            <input name="cin" type="date" id="checkin-date" min="<?php echo date('Y-m-d'); ?>" required>
                         </span>
                         <span>
-                            <label for="cin"> Check-Out</label>
-                            <input name="cout" type ="date">
+                            <label for="cout"> Check-Out</label>
+                            <input name="cout" type="date" id="checkout-date" required>
                         </span>
                     </div>
                 </div>
@@ -167,7 +167,25 @@ if($usermail == true){
                 $cin = $_POST['cin'];
                 $cout = $_POST['cout'];
 
-                if($Name == "" || $Email == "" || $Country == ""){
+                // Date validation
+                $today = date('Y-m-d');
+                if($cin < $today) {
+                    echo "<script>swal({
+                        title: 'Invalid Date',
+                        text: 'Check-in date cannot be before today',
+                        icon: 'error',
+                    });
+                    </script>";
+                }
+                else if($cout <= $cin) {
+                    echo "<script>swal({
+                        title: 'Invalid Date',
+                        text: 'Check-out date must be after check-in date',
+                        icon: 'error',
+                    });
+                    </script>";
+                }
+                else if($Name == "" || $Email == "" || $Country == ""){
                     echo "<script>swal({
                         title: 'Fill the proper details',
                         icon: 'error',
@@ -303,5 +321,37 @@ if($usermail == true){
     closebox = () =>{
       bookbox.style.display = "none";
     }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Get date inputs
+        const checkinDateInput = document.getElementById('checkin-date');
+        const checkoutDateInput = document.getElementById('checkout-date');
+        
+        // Set today as minimum date
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayFormatted = today.toISOString().split('T')[0];
+        
+        // Set minimum date for check-in to today
+        checkinDateInput.min = todayFormatted;
+        
+        // Update checkout minimum date when check-in changes
+        checkinDateInput.addEventListener('change', function() {
+            if (!this.value) return;
+            
+            const checkinDate = new Date(this.value);
+            const nextDay = new Date(checkinDate);
+            nextDay.setDate(nextDay.getDate() + 1);
+            
+            // Update minimum checkout date
+            const minCheckoutFormatted = nextDay.toISOString().split('T')[0];
+            checkoutDateInput.min = minCheckoutFormatted;
+            
+            // If current checkout date is now invalid, reset it
+            if (checkoutDateInput.value && new Date(checkoutDateInput.value) <= checkinDate) {
+                checkoutDateInput.value = minCheckoutFormatted;
+            }
+        });
+    });
 </script>
 </html>

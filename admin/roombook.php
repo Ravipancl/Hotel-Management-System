@@ -2,6 +2,112 @@
 session_start();
 include '../config.php';
 
+// Common validation function for both PHP and JS
+function validateBookingDates($cin, $cout) {
+    $today = strtotime(date('Y-m-d'));
+    $checkin = strtotime($cin);
+    $checkout = strtotime($cout);
+
+    if ($checkin < $today) {
+        return "Check-in date cannot be in the past.";
+    }
+
+    if ($checkout <= $checkin) {
+        return "Check-out date must be after check-in date.";
+    }
+
+    return true;
+}
+
+// Handle form submission
+if (isset($_POST['guestdetailsubmit'])) {
+    $Name = $_POST['Name'] ?? '';
+    $Email = $_POST['Email'] ?? '';
+    $Country = $_POST['Country'] ?? '';
+    $Phone = $_POST['Phone'] ?? '';
+    $RoomType = $_POST['RoomType'] ?? '';
+    $Bed = $_POST['Bed'] ?? '';
+    $NoofRoom = $_POST['NoofRoom'] ?? '';
+    $Meal = $_POST['Meal'] ?? '';
+    $cin = $_POST['cin'] ?? '';
+    $cout = $_POST['cout'] ?? '';
+    
+    // Validate required fields
+    if (empty($Name) || empty($Email) || empty($Country)) {
+        $error_message = "Please fill all the required fields.";
+    } 
+    // Validate dates
+    else {
+        $dateValidation = validateBookingDates($cin, $cout);
+        if ($dateValidation !== true) {
+            $error_message = $dateValidation;
+        } else {
+            // Calculate number of days
+            $nodays = date_diff(date_create($cin), date_create($cout))->format('%a');
+            
+            // Check room availability
+            $rsql = "SELECT type, COUNT(*) as count FROM room WHERE type = ? GROUP BY type";
+            $stmt = $conn->prepare($rsql);
+            $stmt->bind_param("s", $RoomType);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $roomCount = ($row = $result->fetch_assoc()) ? $row['count'] : 0;
+            
+            $csql = "SELECT COUNT(*) as count FROM payment WHERE RoomType = ?";
+            $stmt = $conn->prepare($csql);
+            $stmt->bind_param("s", $RoomType);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $bookedCount = ($row = $result->fetch_assoc()) ? $row['count'] : 0;
+            
+            $available = $roomCount - $bookedCount;
+            
+            if ($available <= 0) {
+                $error_message = "Selected room type is fully booked.";
+            } else {
+                // Insert booking into database
+                $sta = "NotConfirm";
+                $stmt = $conn->prepare("INSERT INTO roombook(Name, Email, Country, Phone, RoomType, Bed, NoofRoom, Meal, cin, cout, stat, nodays) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param("sssssssssssi", $Name, $Email, $Country, $Phone, $RoomType, $Bed, $NoofRoom, $Meal, $cin, $cout, $sta, $nodays);
+                
+                if ($stmt->execute()) {
+                    $success_message = "Reservation successful!";
+                } else {
+                    $error_message = "Something went wrong. Please try again.";
+                }
+            }
+        }
+    }
+}
+
+// Get room availability data for display
+$roomTypes = ['Superior Room', 'Deluxe Room', 'Guest House', 'Single Room'];
+$availability = [];
+
+foreach ($roomTypes as $type) {
+    // Get total rooms of this type
+    $rsql = "SELECT COUNT(*) as count FROM room WHERE type = ?";
+    $stmt = $conn->prepare($rsql);
+    $stmt->bind_param("s", $type);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $roomCount = ($row = $result->fetch_assoc()) ? $row['count'] : 0;
+    
+    // Get booked rooms of this type
+    $csql = "SELECT COUNT(*) as count FROM payment WHERE RoomType = ?";
+    $stmt = $conn->prepare($csql);
+    $stmt->bind_param("s", $type);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $bookedCount = ($row = $result->fetch_assoc()) ? $row['count'] : 0;
+    
+    $availability[$type] = $roomCount - $bookedCount;
+}
+
+// Get all bookings for display
+$bookings = [];
+$roombooktablesql = "SELECT * FROM roombook ORDER BY id DESC";
+$roombookresult = mysqli_query($conn, $roombooktablesql);
 ?>
 
 <!DOCTYPE html>
@@ -11,10 +117,10 @@ include '../config.php';
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- boot -->
+    <!-- bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
-    <!-- fontowesome -->
+    <!-- fontawesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css" integrity="sha512-xh6O/CkQoPOWDdYTDqeRdPCVd1SpvCA9XXcUnZS2FmJNp1coAFzvtCN9BmamE+4aHK8yyUHUSCcJHgXloTyT2A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <!-- sweet alert -->
     <script src="https://unpkg.com/sweetalert/dist/sweetalert.min.js"></script>
@@ -23,10 +129,32 @@ include '../config.php';
 </head>
 
 <body>
-    <!-- guestdetailpanel -->
+    <?php
+    // Display error or success messages
+    if (isset($error_message)) {
+        echo "<script>
+            swal({
+                title: 'Error',
+                text: '$error_message',
+                icon: 'error'
+            });
+        </script>";
+    }
+    
+    if (isset($success_message)) {
+        echo "<script>
+            swal({
+                title: 'Success',
+                text: '$success_message',
+                icon: 'success'
+            });
+        </script>";
+    }
+    ?>
 
+    <!-- Guest detail panel -->
     <div id="guestdetailpanel">
-        <form action="" method="POST" class="guestdetailpanelform">
+        <form action="" method="POST" class="guestdetailpanelform" id="bookingForm">
             <div class="head">
                 <h3>RESERVATION</h3>
                 <i class="fa-solid fa-circle-xmark" onclick="adduserclose()"></i>
@@ -42,244 +170,66 @@ include '../config.php';
                     ?>
 
                     <select name="Country" class="selectinput" required>
-						<option value selected >Select your country</option>
+                        <option value selected >Select your country</option>
                         <?php
-							foreach($countries as $key => $value):
-							echo '<option value="'.$value.'">'.$value.'</option>';
-                            //close your tags!!
-							endforeach;
-						?>
+                            foreach($countries as $key => $value):
+                            echo '<option value="'.$value.'">'.$value.'</option>';
+                            endforeach;
+                        ?>
                     </select>
-                    <input type="text" name="Phone" placeholder="Enter Phoneno" required>
+                    <input type="text" name="Phone" placeholder="Enter Phone number" required>
                 </div>
 
                 <div class="line"></div>
 
                 <div class="reservationinfo">
                     <h4>Reservation information</h4>
-                    <select name="RoomType" class="selectinput">
-						<option value selected >Type Of Room</option>
-                        <option value="Superior Room">SUPERIOR ROOM</option>
-                        <option value="Deluxe Room">DELUXE ROOM</option>
-						<option value="Guest House">GUEST HOUSE</option>
-						<option value="Single Room">SINGLE ROOM</option>
+                    <select name="RoomType" class="selectinput" required id="roomTypeSelect">
+                        <option value="" selected disabled>Type Of Room</option>
+                        <?php foreach($roomTypes as $type): ?>
+                            <option value="<?php echo $type; ?>" <?php echo $availability[$type] <= 0 ? 'disabled' : ''; ?>>
+                                <?php echo strtoupper($type); ?> (<?php echo $availability[$type]; ?> available)
+                            </option>
+                        <?php endforeach; ?>
                     </select>
-                    <select name="Bed" class="selectinput">
-						<option value selected >Bedding Type</option>
+                    <select name="Bed" class="selectinput" required>
+                        <option value="" selected disabled>Bedding Type</option>
                         <option value="Single">Single</option>
                         <option value="Double">Double</option>
-						<option value="Triple">Triple</option>
+                        <option value="Triple">Triple</option>
                         <option value="Quad">Quad</option>
-						<option value="None">None</option>
+                        <option value="None">None</option>
                     </select>
-                    <select name="NoofRoom" class="selectinput">
-						<option value selected >No of Room</option>
+                    <select name="NoofRoom" class="selectinput" required>
+                        <option value="" selected disabled>No of Room</option>
                         <option value="1">1</option>
-                        <!-- <option value="1">2</option>
-                        <option value="1">3</option> -->
                     </select>
-                    <select name="Meal" class="selectinput">
-						<option value selected >Meal</option>
+                    <select name="Meal" class="selectinput" required>
+                        <option value="" selected disabled>Meal</option>
                         <option value="Room only">Room only</option>
                         <option value="Breakfast">Breakfast</option>
-						<option value="Half Board">Half Board</option>
-						<option value="Full Board">Full Board</option>
-					</select>
+                        <option value="Half Board">Half Board</option>
+                        <option value="Full Board">Full Board</option>
+                    </select>
                     <div class="datesection">
                         <span>
                             <label for="cin"> Check-In</label>
-                            <input name="cin" type ="date">
+                            <input name="cin" type="date" id="checkin-date" min="<?php echo date('Y-m-d'); ?>" required>
                         </span>
                         <span>
-                            <label for="cin"> Check-Out</label>
-                            <input name="cout" type ="date">
+                            <label for="cout"> Check-Out</label>
+                            <input name="cout" type="date" id="checkout-date" required disabled>
                         </span>
                     </div>
                 </div>
             </div>
             <div class="footer">
-                <button class="btn btn-success" name="guestdetailsubmit">Submit</button>
+                <button class="btn btn-success" name="guestdetailsubmit" type="submit">Submit</button>
             </div>
         </form>
-
-        <?php       
-        // <!-- room availablity start-->
-
-        $rsql ="select * from room";
-        $rre= mysqli_query($conn,$rsql);
-        $r = 0;
-        $sc = 0;
-        $gh = 0;
-        $sr = 0;
-        $dr = 0;
-
-        while($rrow=mysqli_fetch_array($rre))
-        {
-            $r = $r + 1;
-            $s = $rrow['type'];
-            if($s=="Superior Room")
-            {
-                $sc = $sc+ 1;
-            }
-            if($s=="Guest House")
-            {
-                $gh = $gh + 1;
-            }
-            if($s=="Single Room" )
-            {
-                $sr = $sr + 1;
-            }
-            if($s=="Deluxe Room" )
-            {
-                $dr = $dr + 1;
-            }
-        }
-
-        $csql ="select * from payment";
-        $cre= mysqli_query($conn,$csql);
-        $cr =0 ;
-        $csc =0;
-        $cgh = 0;
-        $csr = 0;
-        $cdr = 0;
-        while($crow=mysqli_fetch_array($cre))
-        {
-            $cr = $cr + 1;
-            $cs = $crow['RoomType'];
-                        
-            if($cs=="Superior Room")
-            {
-                $csc = $csc + 1;
-            }
-                        
-            if($cs=="Guest House" )
-            {
-                $cgh = $cgh + 1;
-            }
-            if($cs=="Single Room")
-            {
-                $csr = $csr + 1;
-            }
-            if($cs=="Deluxe Room")
-            {
-                $cdr = $cdr + 1;
-            }
-        }
-        // room availablity
-        // Superior Room =>
-        $f1 =$sc - $csc;
-        if($f1 <=0 )
-        {	
-            $f1 = "NO";
-        }
-        // Guest House =>
-        $f2 =  $gh -$cgh;
-        if($f2 <=0 )
-        {	
-            $f2 = "NO";
-        }
-        // Single Room =>
-        $f3 =$sr - $csr;
-        if($f3 <=0 )
-        {	
-            $f3 = "NO";
-        }
-        // Deluxe Room =>
-        $f4 =$dr - $cdr; 
-        if($f4 <=0 )
-        {	
-            $f4 = "NO";
-        }
-        //total available room =>
-        $f5 =$r-$cr; 
-        if($f5 <=0 )
-        {
-            $f5 = "NO";
-        }
-        ?>
-        <!-- room availablity end-->
-
-        <!-- ==== room book php ====-->
-        <?php       
-            if (isset($_POST['guestdetailsubmit'])) {
-                $Name = $_POST['Name'];
-                $Email = $_POST['Email'];
-                $Country = $_POST['Country'];
-                $Phone = $_POST['Phone'];
-                $RoomType = $_POST['RoomType'];
-                $Bed = $_POST['Bed'];
-                $NoofRoom = $_POST['NoofRoom'];
-                $Meal = $_POST['Meal'];
-                $cin = $_POST['cin'];
-                $cout = $_POST['cout'];
-
-                if($Name == "" || $Email == "" || $Country == ""){
-                    echo "<script>swal({
-                        title: 'Fill the proper details',
-                        icon: 'error',
-                    });
-                    </script>";
-                }
-                else{
-                    $sta = "NotConfirm";
-                    $sql = "INSERT INTO roombook(Name,Email,Country,Phone,RoomType,Bed,NoofRoom,Meal,cin,cout,stat,nodays) VALUES ('$Name','$Email','$Country','$Phone','$RoomType','$Bed','$NoofRoom','$Meal','$cin','$cout','$sta',datediff('$cout','$cin'))";
-                    $result = mysqli_query($conn, $sql);
-
-                    // if($f1=="NO")
-                    // {
-                    //     echo "<script>swal({
-                    //         title: 'Superior Room is not available',
-                    //         icon: 'error',
-                    //     });
-                    //     </script>";
-                    // }
-                    // else if($f2=="NO")
-                    // {
-                    //     echo "<script>swal({
-                    //         title: 'Guest House is not available',
-                    //         icon: 'error',
-                    //     });
-                    //     </script>";
-                    // }
-                    // else if($f3 == "NO")
-                    // {
-                    //     echo "<script>swal({
-                    //         title: 'Si Room is not available',
-                    //         icon: 'error',
-                    //     });
-                    //     </script>";
-                    // }
-                    // else if($f4 == "NO")
-                    // {
-                    //     echo "<script>swal({
-                    //         title: 'Deluxe Room is not available',
-                    //         icon: 'error',
-                    //     });
-                    //     </script>";
-                    // }
-                    // else if($result = mysqli_query($conn, $sql))
-                    // {
-                        if ($result) {
-                            echo "<script>swal({
-                                title: 'Reservation successful',
-                                icon: 'success',
-                            });
-                        </script>";
-                        } else {
-                            echo "<script>swal({
-                                    title: 'Something went wrong',
-                                    icon: 'error',
-                                });
-                        </script>";
-                        }
-                    // }
-                }
-            }
-        ?>
     </div>
 
-    
-    <!-- ================================================= -->
+    <!-- Search and action section -->
     <div class="searchsection">
         <input type="text" name="search_bar" id="search_bar" placeholder="search..." onkeyup="searchFun()">
         <button class="adduser" id="adduser" onclick="adduseropen()"><i class="fa-solid fa-bookmark"></i> Add</button>
@@ -288,12 +238,8 @@ include '../config.php';
         </form>
     </div>
 
-    <div class="roombooktable" class="table-responsive-xl">
-        <?php
-            $roombooktablesql = "SELECT * FROM roombook";
-            $roombookresult = mysqli_query($conn, $roombooktablesql);
-            $nums = mysqli_num_rows($roombookresult);
-        ?>
+    <!-- Bookings table -->
+    <div class="roombooktable table-responsive-xl">
         <table class="table table-bordered" id="table-data">
             <thead>
                 <tr>
@@ -311,14 +257,10 @@ include '../config.php';
                     <th scope="col">No of Day</th>
                     <th scope="col">Status</th>
                     <th scope="col" class="action">Action</th>
-                    <!-- <th>Delete</th> -->
                 </tr>
             </thead>
-
             <tbody>
-            <?php
-            while ($res = mysqli_fetch_array($roombookresult)) {
-            ?>
+                <?php while ($res = mysqli_fetch_array($roombookresult)) : ?>
                 <tr>
                     <td><?php echo $res['id'] ?></td>
                     <td><?php echo $res['Name'] ?></td>
@@ -334,29 +276,146 @@ include '../config.php';
                     <td><?php echo $res['nodays'] ?></td>
                     <td><?php echo $res['stat'] ?></td>
                     <td class="action">
-                        <?php
-                            if($res['stat'] == "Confirm")
-                            {
-                                echo " ";
-                            }
-                            else
-                            {
-                                echo "<a href='roomconfirm.php?id=". $res['id'] ."'><button class='btn btn-success'>Confirm</button></a>";
-                            }
-                        ?>
+                        <?php if($res['stat'] != "Confirm") : ?>
+                            <a href="roomconfirm.php?id=<?php echo $res['id'] ?>"><button class='btn btn-success'>Confirm</button></a>
+                        <?php endif; ?>
                         <a href="roombookedit.php?id=<?php echo $res['id'] ?>"><button class="btn btn-primary">Edit</button></a>
                         <a href="roombookdelete.php?id=<?php echo $res['id'] ?>"><button class='btn btn-danger'>Delete</button></a>
                     </td>
                 </tr>
-            <?php
-            }
-            ?>
+                <?php endwhile; ?>
             </tbody>
         </table>
     </div>
+
+    <script>
+    // Helper function to format date as YYYY-MM-DD
+    function formatDate(date) {
+        return date.toISOString().split('T')[0];
+    }
+    
+    // Initialize date fields on load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Set check-in date default to today
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        const checkinField = document.getElementById('checkin-date');
+        const checkoutField = document.getElementById('checkout-date');
+        
+        if (checkinField) {
+            checkinField.value = formatDate(today);
+            checkinField.min = formatDate(today);
+        }
+        
+        if (checkoutField) {
+            checkoutField.min = formatDate(tomorrow);
+            checkoutField.disabled = false;
+            checkoutField.value = formatDate(tomorrow);
+        }
+    });
+    
+    // Date validation
+    document.getElementById('checkin-date')?.addEventListener('change', function() {
+        const checkinDate = new Date(this.value);
+        const checkoutField = document.getElementById('checkout-date');
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // Validate check-in date
+        if (checkinDate < today) {
+            swal({
+                title: 'Invalid Date',
+                text: 'Check-in date cannot be in the past',
+                icon: 'error'
+            });
+            this.value = formatDate(today);
+            checkoutField.disabled = true;
+            return;
+        }
+        
+        // Set minimum checkout date to be the day after check-in
+        const minCheckout = new Date(checkinDate);
+        minCheckout.setDate(minCheckout.getDate() + 1);
+        checkoutField.min = formatDate(minCheckout);
+        checkoutField.disabled = false;
+        
+        // Reset checkout if invalid
+        const checkoutDate = new Date(checkoutField.value);
+        if (checkoutDate <= checkinDate) {
+            checkoutField.value = formatDate(minCheckout);
+        }
+    });
+    
+    // Form validation before submission
+    document.getElementById('bookingForm')?.addEventListener('submit', function(e) {
+        const checkinField = document.getElementById('checkin-date');
+        const checkoutField = document.getElementById('checkout-date');
+        
+        if (!checkinField || !checkoutField) return true;
+        
+        const checkinDate = new Date(checkinField.value);
+        const checkoutDate = new Date(checkoutField.value);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // Final validation
+        if (checkinDate < today) {
+            e.preventDefault();
+            swal({
+                title: 'Invalid Date',
+                text: 'Check-in date cannot be in the past',
+                icon: 'error'
+            });
+            return false;
+        }
+        
+        if (checkoutDate <= checkinDate) {
+            e.preventDefault();
+            swal({
+                title: 'Invalid Date',
+                text: 'Check-out date must be after check-in date',
+                icon: 'error'
+            });
+            return false;
+        }
+        
+        return true;
+    });
+    
+    // Search function
+    function searchFun() {
+        const filter = document.getElementById('search_bar').value.toUpperCase();
+        const myTable = document.getElementById("table-data");
+        const tr = myTable.getElementsByTagName('tr');
+
+        for (let i = 0; i < tr.length; i++) {
+            const tds = tr[i].getElementsByTagName('td');
+            let found = false;
+            
+            for (let j = 0; j < tds.length; j++) {
+                if (tds[j]) {
+                    const textValue = tds[j].textContent || tds[j].innerText;
+                    if (textValue.toUpperCase().indexOf(filter) > -1) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            
+            tr[i].style.display = found ? "" : "none";
+        }
+    }
+    
+    // Show/hide guest detail panel
+    function adduseropen() {
+        document.getElementById('guestdetailpanel').style.display = "flex";
+    }
+    
+    function adduserclose() {
+        document.getElementById('guestdetailpanel').style.display = "none";
+    }
+    </script>
 </body>
-<script src="./javascript/roombook.js"></script>
-
-
-
 </html>
